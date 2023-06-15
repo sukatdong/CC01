@@ -1,158 +1,107 @@
+const bodyParser = require('body-parser')
 const express = require('express')
 const mysql = require('mysql')
 const router = express.Router()
-const Multer = require('multer')
-const imgUpload = require('../modules/imgUpload')
-
-const multer = Multer({
-    storage: Multer.MemoryStorage,
-    fileSize: 5 * 1024 * 1024
-})
+const bcrypt = require("bcrypt")
 
 // TODO: Sesuaikan konfigurasi database
 const connection = mysql.createConnection({
-    host: 'public_ip_sql_instance_Anda',
+    host: '34.101.106.158',
     user: 'root',
-    database: 'nama_database_Anda',
-    password: 'password_sql_Anda'
+    database: 'sqlcaps01',
+    password: 'sqlcaps01'
 })
 
-router.get("/dashboard", (req, res) => {
-    const query = "select (select count(*) from records where month(records.date) = month(now()) AND year(records.date) = year(now())) as month_records, (select sum(amount) from records) as total_amount;"
+router.get("/users", (req, res) => {
+    const query = "SELECT * FROM users"
     connection.query(query, (err, rows, field) => {
-        if(err) {
-            res.status(500).send({message: err.sqlMessage})
-        } else {
-            res.json(rows)
-        }
-    })
-})
-
-router.get("/getrecords", (req, res) => {
-    const query = "SELECT * FROM records"
-    connection.query(query, (err, rows, field) => {
-        if(err) {
-            res.status(500).send({message: err.sqlMessage})
-        } else {
-            res.json(rows)
-        }
-    })
-})
-
-router.get("/getlast10records", (req, res) => {
-    const query = "SELECT * FROM records ORDER BY date DESC LIMIT 10"
-    connection.query(query, (err, rows, field) => {
-        if(err) {
-            res.status(500).send({message: err.sqlMessage})
-        } else {
-            res.json(rows)
-        }
-    })
-})
-
-router.get("/gettopexpense", (req, res) => {
-    const query = "SELECT * FROM records WHERE amount < 0 ORDER BY amount ASC LIMIT 10"
-    connection.query(query, (err, rows, field) => {
-        if(err) {
-            res.status(500).send({message: err.sqlMessage})
-        } else {
-            res.json(rows)
-        }
-    })
-})
-
-router.get("/getrecord/:id", (req, res) => {
-    const id = req.params.id
-
-    const query = "SELECT * FROM records WHERE id = ?"
-    connection.query(query, [id], (err, rows, field) => {
-        if(err) {
-            res.status(500).send({message: err.sqlMessage})
-        } else {
-            res.json(rows)
-        }
-    })
-})
-
-router.get("/searchrecords", (req, res) => {
-    const s = req.query.s;
-
-    console.log(s)
-    const query = "SELECT * FROM records WHERE name LIKE '%" + s + "%' or notes LIKE '%" + s + "%'"
-    connection.query(query, (err, rows, field) => {
-        if(err) {
-            res.status(500).send({message: err.sqlMessage})
-        } else {
-            res.json(rows)
-        }
-    })
-})
-
-router.post("/insertrecord", multer.single('attachment'), imgUpload.uploadToGcs, (req, res) => {
-    const name = req.body.name
-    const amount = req.body.amount
-    const date = req.body.date
-    const notes = req.body.notes
-    var imageUrl = ''
-
-    if (req.file && req.file.cloudStoragePublicUrl) {
-        imageUrl = req.file.cloudStoragePublicUrl
-    }
-
-    const query = "INSERT INTO records (name, amount, date, notes, attachment) values (?, ?, ?, ?, ?)"
-
-    connection.query(query, [name, amount, date, notes, imageUrl], (err, rows, fields) => {
         if (err) {
-            res.status(500).send({message: err.sqlMessage})
+            res.status(500).send({ message: err.sqlMessage })
         } else {
-            res.send({message: "Insert Successful"})
+            res.json(rows)
         }
     })
 })
 
-router.put("/editrecord/:id", multer.single('attachment'), imgUpload.uploadToGcs, (req, res) => {
-    const id = req.params.id
-    const name = req.body.name
-    const amount = req.body.amount
-    const date = req.body.date
-    const notes = req.body.notes
-    var imageUrl = ''
+router.post('/login', (req, res) => {
+    const { email, password } = req.body;
 
-    if (req.file && req.file.cloudStoragePublicUrl) {
-        imageUrl = req.file.cloudStoragePublicUrl
-    }
-
-    const query = "UPDATE records SET name = ?, amount = ?, date = ?, notes = ?, attachment = ? WHERE id = ?"
-    
-    connection.query(query, [name, amount, date, notes, imageUrl, id], (err, rows, fields) => {
+    const query = "SELECT * FROM users WHERE email = ?";
+    connection.query(query, [email], (err, rows) => {
         if (err) {
-            res.status(500).send({message: err.sqlMessage})
+            res.status(500).send({ message: err.sqlMessage });
+        } else if (rows.length === 0) {
+            res.status(404).send({ message: "User not found" });
         } else {
-            res.send({message: "Update Successful"})
+            const user = rows[0];
+            bcrypt.compare(password, user.password, (err, result) => {
+                if (err) {
+                    res.status(500).send({ message: "Password comparison failed" });
+                } else if (result) {
+                    res.status(200).send({ message: "Login successful" });
+                } else {
+                    res.status(401).send({ message: "Invalid password" });
+                }
+            });
         }
-    })
-})
+    });
+});
 
-router.delete("/deleterecord/:id", (req, res) => {
-    const id = req.params.id
-    
-    const query = "DELETE FROM records WHERE id = ?"
-    connection.query(query, [id], (err, rows, fields) => {
+router.post('/register', (req, res) => {
+    const { nama, email, password, tanggal_lahir } = req.body;
+
+    bcrypt.hash(password, 10, (err, hashedPassword) => {
         if (err) {
-            res.status(500).send({message: err.sqlMessage})
+            res.status(500).send({ message: "Password encryption failed" });
         } else {
-            res.send({message: "Delete successful"})
+            const query = 'INSERT INTO users (nama, email, password, tanggal_lahir) VALUES (?, ?, ?, ?)';
+            connection.query(query, [nama, email, hashedPassword, tanggal_lahir], (err, result) => {
+                if (err) {
+                    res.status(500).send({ message: err.sqlMessage });
+                } else {
+                    res.status(201).send({ message: 'User inserted successfully', insertId: result.insertId });
+                }
+            });
         }
-    })
+    });
 })
 
-router.post("/uploadImage", multer.single('image'), imgUpload.uploadToGcs, (req, res, next) => {
-    const data = req.body
-    if (req.file && req.file.cloudStoragePublicUrl) {
-        data.imageUrl = req.file.cloudStoragePublicUrl
-    }
+// Get user by ID
+router.get("/users/:id", (req, res) => {
+    const userId = req.params.id;
+    const query = "SELECT * FROM users WHERE id = ?";
+    connection.query(query, [userId], (err, rows) => {
+        if (err) {
+            res.status(500).send({ message: err.sqlMessage });
+        } else if (rows.length === 0) {
+            res.status(404).send({ message: "User not found" });
+        } else {
+            const user = rows[0];
+            res.status(200).send(user);
+        }
+    });
+});
 
-    res.send(data)
-})
+// Change user password
+router.put("/users/:id/password", (req, res) => {
+    const userId = req.params.id;
+    const newPassword = req.body.newPassword;
 
-module.exports = router
+    bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
+        if (err) {
+            res.status(500).send({ message: "Password encryption failed" });
+        } else {
+            const query = "UPDATE users SET password = ? WHERE id = ?";
+            connection.query(query, [hashedPassword, userId], (err, result) => {
+                if (err) {
+                    res.status(500).send({ message: err.sqlMessage });
+                } else {
+                    res.status(200).send({ message: "Password updated successfully" });
+                }
+            });
+        }
+    });
+});
+
+
+module.exports = router;
